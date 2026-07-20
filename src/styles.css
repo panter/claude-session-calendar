@@ -126,6 +126,23 @@ button:hover {
   border-radius: 50%;
   flex-shrink: 0;
 }
+.pr-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pr-time {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+.week-total {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--border);
+  color: var(--muted);
+  font-size: 12px;
+}
 .legend {
   display: flex;
   flex-direction: column;
@@ -403,13 +420,62 @@ button:hover {
 }
 .day-header {
   flex: 1;
-  text-align: center;
-  padding: 9px 0;
-  font-weight: 600;
+  min-width: 0;
+  padding: 7px 6px 5px;
   border-left: 1px solid var(--border);
 }
-.day-header.today {
+.dh-date {
+  text-align: center;
+  font-weight: 600;
+}
+.day-header.today .dh-date {
   color: var(--accent);
+}
+.dh-total {
+  font-weight: 400;
+  font-size: 11px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.day-summary {
+  margin-top: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.ds-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10.5px;
+  cursor: pointer;
+  border-radius: 4px;
+  padding: 0 2px;
+}
+.ds-row:hover {
+  background: color-mix(in srgb, var(--muted) 10%, transparent);
+}
+.ds-row.off {
+  opacity: 0.35;
+}
+.ds-row .dot {
+  width: 7px;
+  height: 7px;
+}
+.ds-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ds-time {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.ds-more {
+  font-size: 10px;
+  color: var(--muted);
+  padding-left: 13px;
 }
 .grid-scroll {
   flex: 1;

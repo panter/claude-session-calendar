@@ -4,7 +4,9 @@ import type { DataFile, SlotBlock } from "./types";
 import {
   addDays,
   computeWeekBlocks,
+  computeWeekSummaries,
   fmtDay,
+  fmtDurationShort,
   fmtMinutes,
   fmtMinutesShort,
   fmtTime,
@@ -13,7 +15,9 @@ import {
   isoWeekNumber,
   projectColor,
   splitMinutes,
+  splitTotal,
   weekStart,
+  type SplitMs,
 } from "./lib";
 
 const SLOT_OPTIONS = [5, 10, 15, 30, 60];
@@ -76,6 +80,20 @@ export default function App() {
     if (!data || week === null) return null;
     return computeWeekBlocks(data, week, visibleProjects, slotMinutes);
   }, [data, week, visibleProjects, slotMinutes]);
+
+  const summaries = useMemo(() => {
+    if (!data || week === null) return null;
+    return computeWeekSummaries(data, week);
+  }, [data, week]);
+
+  const splitTitle = (label: string, st: SplitMs) => {
+    const { totalMin, parts } = splitMinutes(splitTotal(st), [st.claudeMs, st.youMs, st.idleMs], 1);
+    return (
+      `${label}: total ${fmtMinutes(totalMin)} · you ${fmtMinutes(parts[1])} · ` +
+      `Claude ${fmtMinutes(parts[0])}` +
+      (parts[2] > 0 ? ` · idle ${fmtMinutes(parts[2])}` : "")
+    );
+  };
 
   // Full "chunk" for the selected block: your inputs interleaved with Claude's
   // replies, from the first input of the slot to the end of the operating turn.
@@ -275,17 +293,39 @@ export default function App() {
               <a onClick={() => setHiddenProjects(projectIds)}>none</a>
             </span>
           </div>
-          {data.projects.map((p) => (
-            <label key={p.id} className="project-row" title={p.cwds.join("\n")}>
-              <input
-                type="checkbox"
-                checked={visibleProjects.has(p.id)}
-                onChange={() => toggleProject(p.id)}
-              />
-              <span className="dot" style={{ background: projectColor(projectIds, p.id) }} />
-              {p.label}
-            </label>
-          ))}
+          {data.projects.map((p) => {
+            const st = summaries?.week.get(p.id);
+            return (
+              <label
+                key={p.id}
+                className="project-row"
+                title={(st ? splitTitle(p.label, st) + "\n" : "") + p.cwds.join("\n")}
+              >
+                <input
+                  type="checkbox"
+                  checked={visibleProjects.has(p.id)}
+                  onChange={() => toggleProject(p.id)}
+                />
+                <span className="dot" style={{ background: projectColor(projectIds, p.id) }} />
+                <span className="pr-name">{p.label}</span>
+                {st && <span className="pr-time">{fmtDurationShort(splitTotal(st))}</span>}
+              </label>
+            );
+          })}
+          {summaries && (
+            <div className="week-total">
+              {(() => {
+                const sum = { youMs: 0, claudeMs: 0, idleMs: 0 };
+                for (const [p, st] of summaries.week) {
+                  if (!visibleProjects.has(p)) continue;
+                  sum.youMs += st.youMs;
+                  sum.claudeMs += st.claudeMs;
+                  sum.idleMs += st.idleMs;
+                }
+                return splitTotal(sum) > 0 ? splitTitle("Σ week", sum) : "no time this week";
+              })()}
+            </div>
+          )}
         </div>
 
         <div className="legend">
@@ -408,11 +448,41 @@ export default function App() {
       <main className="calendar">
         <div className="day-headers">
           <div className="gutter" />
-          {Array.from({ length: 7 }, (_, i) => (
-            <div key={i} className={"day-header" + (i === today ? " today" : "")}>
-              {fmtDay(addDays(week, i))}
-            </div>
-          ))}
+          {Array.from({ length: 7 }, (_, i) => {
+            const rows = summaries
+              ? [...summaries.days[i].entries()].sort(
+                  (a, b) => splitTotal(b[1]) - splitTotal(a[1])
+                )
+              : [];
+            const dayTotal = rows
+              .filter(([p]) => visibleProjects.has(p))
+              .reduce((a, [, st]) => a + splitTotal(st), 0);
+            return (
+              <div key={i} className={"day-header" + (i === today ? " today" : "")}>
+                <div className="dh-date">
+                  {fmtDay(addDays(week, i))}
+                  {dayTotal > 0 && <span className="dh-total"> {fmtDurationShort(dayTotal)}</span>}
+                </div>
+                {rows.length > 0 && (
+                  <div className="day-summary">
+                    {rows.slice(0, 6).map(([p, st]) => (
+                      <div
+                        key={p}
+                        className={"ds-row" + (visibleProjects.has(p) ? "" : " off")}
+                        onClick={() => toggleProject(p)}
+                        title={`${splitTitle(p, st)}\nclick to ${visibleProjects.has(p) ? "hide" : "show"} project`}
+                      >
+                        <span className="dot" style={{ background: projectColor(projectIds, p) }} />
+                        <span className="ds-name">{p}</span>
+                        <span className="ds-time">{fmtDurationShort(splitTotal(st))}</span>
+                      </div>
+                    ))}
+                    {rows.length > 6 && <div className="ds-more">+{rows.length - 6} more</div>}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
         <div className="grid-scroll">
           <div className="grid" style={{ height: `${(maxHour - minHour) * 48}px` }}>

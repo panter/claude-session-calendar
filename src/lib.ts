@@ -44,6 +44,10 @@ export function fmtMinutesShort(min: number): string {
   return `${h}h ${String(min % 60).padStart(2, "0")}m`;
 }
 
+export function fmtDurationShort(ms: number): string {
+  return fmtMinutesShort(Math.max(1, Math.ceil(ms / 60000)));
+}
+
 export function fmtDuration(ms: number): string {
   return fmtMinutes(Math.max(1, Math.ceil(ms / 60000)));
 }
@@ -276,6 +280,126 @@ export function computeWeekBlocks(
     maxHour = Math.max(maxHour, Math.ceil(b.endMin / 60));
   }
   return { inputBlocks, activityBlocks, minHour, maxHour: Math.min(24, maxHour) };
+}
+
+// ---------- day / week summaries ----------
+
+const TYPING_MS = 60_000;
+const IDLE_GAP_MS = 5 * 60_000;
+// Gaps longer than this are "dormant" — not counted as work time at all.
+const DORMANT_GAP_MS = 30 * 60_000;
+
+interface IV {
+  s: number;
+  e: number;
+}
+
+export interface SplitMs {
+  youMs: number;
+  claudeMs: number;
+  idleMs: number;
+}
+
+export function splitTotal(st: SplitMs): number {
+  return st.youMs + st.claudeMs + st.idleMs;
+}
+
+function mergeIvs(list: IV[]): IV[] {
+  const sorted = [...list].sort((a, b) => a.s - b.s);
+  const out: IV[] = [];
+  for (const iv of sorted) {
+    const last = out[out.length - 1];
+    if (last && iv.s <= last.e) last.e = Math.max(last.e, iv.e);
+    else out.push({ ...iv });
+  }
+  return out;
+}
+
+/** a minus b; both must be merged & sorted. */
+function subtractIvs(a: IV[], b: IV[]): IV[] {
+  const out: IV[] = [];
+  let j = 0;
+  for (const iv of a) {
+    let s = iv.s;
+    while (j < b.length && b[j].e <= s) j++;
+    let k = j;
+    while (k < b.length && b[k].s < iv.e) {
+      if (b[k].s > s) out.push({ s, e: Math.min(b[k].s, iv.e) });
+      s = Math.max(s, b[k].e);
+      if (s >= iv.e) break;
+      k++;
+    }
+    if (s < iv.e) out.push({ s, e: iv.e });
+  }
+  return out;
+}
+
+export interface WeekSummaries {
+  /** per weekday (0 = Monday), project id → time split */
+  days: Map<string, SplitMs>[];
+  /** whole week, project id → time split */
+  week: Map<string, SplitMs>;
+}
+
+/**
+ * Per-project time splits per day, using the same semantics as the detail
+ * panel: 1 min assumed typing per message, claude = operating minus typing,
+ * gaps ≤5 min = you, ≤30 min = idle, longer = dormant (not counted).
+ */
+export function computeWeekSummaries(data: DataFile, ws: number): WeekSummaries {
+  const we = addDays(ws, 7);
+  const bounds = Array.from({ length: 8 }, (_, i) => addDays(ws, i));
+  const sessionById = new Map(data.sessions.map((s) => [s.id, s]));
+
+  const inputsBySession = new Map<string, number[]>();
+  for (const i of data.inputs) {
+    let list = inputsBySession.get(i.s);
+    if (!list) inputsBySession.set(i.s, (list = []));
+    list.push(i.t);
+  }
+  const actBySession = new Map<string, IV[]>();
+  for (const a of data.activity) {
+    let list = actBySession.get(a.s);
+    if (!list) actBySession.set(a.s, (list = []));
+    list.push({ s: a.start, e: a.end });
+  }
+
+  const days: Map<string, SplitMs>[] = Array.from({ length: 7 }, () => new Map());
+  const week = new Map<string, SplitMs>();
+  const add = (proj: string, kind: keyof SplitMs, s: number, e: number) => {
+    s = Math.max(s, ws);
+    e = Math.min(e, we);
+    for (let d = 0; d < 7; d++) {
+      const os = Math.max(s, bounds[d]);
+      const oe = Math.min(e, bounds[d + 1]);
+      if (oe <= os) continue;
+      let dm = days[d].get(proj);
+      if (!dm) days[d].set(proj, (dm = { youMs: 0, claudeMs: 0, idleMs: 0 }));
+      dm[kind] += oe - os;
+      let wm = week.get(proj);
+      if (!wm) week.set(proj, (wm = { youMs: 0, claudeMs: 0, idleMs: 0 }));
+      wm[kind] += oe - os;
+    }
+  };
+
+  for (const [sid, times] of inputsBySession) {
+    const session = sessionById.get(sid);
+    if (!session || session.end < ws || session.start >= we) continue;
+    const proj = session.project;
+    const typing = mergeIvs(times.map((t) => ({ s: t - TYPING_MS, e: t })));
+    const claudeRaw = mergeIvs(actBySession.get(sid) ?? []);
+    const claude = subtractIvs(claudeRaw, typing);
+    for (const iv of typing) add(proj, "youMs", iv.s, iv.e);
+    for (const iv of claude) add(proj, "claudeMs", iv.s, iv.e);
+    const cov = mergeIvs([...typing, ...claudeRaw]);
+    for (let i = 1; i < cov.length; i++) {
+      const gap = cov[i].s - cov[i - 1].e;
+      if (gap <= 0) continue;
+      if (gap <= IDLE_GAP_MS) add(proj, "youMs", cov[i - 1].e, cov[i].s);
+      else if (gap <= DORMANT_GAP_MS) add(proj, "idleMs", cov[i - 1].e, cov[i].s);
+    }
+  }
+  return { days, week };
 }
 
 const PALETTE = [
