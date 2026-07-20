@@ -454,15 +454,16 @@ export default function App() {
                   (a, b) => splitTotal(b[1]) - splitTotal(a[1])
                 )
               : [];
-            const dayTotal = rows
-              .filter(([p]) => visibleProjects.has(p))
-              .reduce((a, [, st]) => a + splitTotal(st), 0);
+            const daySum = { youMs: 0, claudeMs: 0, idleMs: 0 };
+            for (const [p, st] of rows) {
+              if (!visibleProjects.has(p)) continue;
+              daySum.youMs += st.youMs;
+              daySum.claudeMs += st.claudeMs;
+              daySum.idleMs += st.idleMs;
+            }
             return (
               <div key={i} className={"day-header" + (i === today ? " today" : "")}>
-                <div className="dh-date">
-                  {fmtDay(addDays(week, i))}
-                  {dayTotal > 0 && <span className="dh-total"> {fmtDurationShort(dayTotal)}</span>}
-                </div>
+                <div className="dh-date">{fmtDay(addDays(week, i))}</div>
                 {rows.length > 0 && (
                   <div className="day-summary">
                     {rows.slice(0, 6).map(([p, st]) => (
@@ -478,6 +479,12 @@ export default function App() {
                       </div>
                     ))}
                     {rows.length > 6 && <div className="ds-more">+{rows.length - 6} more</div>}
+                    {splitTotal(daySum) > 0 && (
+                      <div className="ds-row ds-total" title={splitTitle("Σ day", daySum)}>
+                        <span className="ds-name">Σ</span>
+                        <span className="ds-time">{fmtDurationShort(splitTotal(daySum))}</span>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

@@ -431,11 +431,18 @@ button:hover {
 .day-header.today .dh-date {
   color: var(--accent);
 }
-.dh-total {
-  font-weight: 400;
-  font-size: 11px;
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
+.ds-row.ds-total {
+  border-top: 1px solid var(--border);
+  margin-top: 2px;
+  padding-top: 2px;
+  font-weight: 600;
+  cursor: default;
+}
+.ds-row.ds-total:hover {
+  background: none;
+}
+.ds-row.ds-total .ds-time {
+  color: var(--text);
 }
 .day-summary {
   margin-top: 4px;
