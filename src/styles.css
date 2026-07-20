@@ -475,6 +475,11 @@ button:hover {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.ds-you {
+  color: var(--accent);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
 .ds-time {
   color: var(--muted);
   font-variant-numeric: tabular-nums;

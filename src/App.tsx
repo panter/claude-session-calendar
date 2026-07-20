@@ -475,14 +475,18 @@ export default function App() {
                       >
                         <span className="dot" style={{ background: projectColor(projectIds, p) }} />
                         <span className="ds-name">{p}</span>
-                        <span className="ds-time">{fmtDurationShort(splitTotal(st))}</span>
+                        <span className="ds-you">{st.youMs > 0 ? fmtDurationShort(st.youMs) : "0m"}</span>
+                        <span className="ds-time">/ {fmtDurationShort(splitTotal(st))}</span>
                       </div>
                     ))}
                     {rows.length > 6 && <div className="ds-more">+{rows.length - 6} more</div>}
                     {splitTotal(daySum) > 0 && (
                       <div className="ds-row ds-total" title={splitTitle("Σ day", daySum)}>
                         <span className="ds-name">Σ</span>
-                        <span className="ds-time">{fmtDurationShort(splitTotal(daySum))}</span>
+                        <span className="ds-you">
+                          {daySum.youMs > 0 ? fmtDurationShort(daySum.youMs) : "0m"}
+                        </span>
+                        <span className="ds-time">/ {fmtDurationShort(splitTotal(daySum))}</span>
                       </div>
                     )}
                   </div>
