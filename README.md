@@ -31,9 +31,44 @@ The build is fully static — serve `dist/` with any web server, e.g.
 
 ## Claude skill
 
-The `session-calendar` skill (installed at `~/.claude/skills/session-calendar`)
-lets you just type `/session-calendar` in any Claude Code session to refresh
-the data and open the calendar.
+This repo doubles as a Claude Code skill ([SKILL.md](SKILL.md) at the repo
+root): once installed, typing `/session-calendar` in any Claude Code session
+refreshes the data and opens the calendar.
+
+### Install
+
+Clone the repo and symlink it into your user-level skills directory:
+
+```sh
+git clone https://github.com/panter/claude-session-calendar.git ~/git/claude-session-calendar
+ln -s ~/git/claude-session-calendar ~/.claude/skills/session-calendar
+cd ~/git/claude-session-calendar && pnpm install
+```
+
+Restart Claude Code (or start a new session) and `/session-calendar` is
+available everywhere.
+
+### Update
+
+Because the skill directory is a symlink to the clone, updating is just:
+
+```sh
+cd ~/git/claude-session-calendar && git pull && pnpm install
+```
+
+### Other ways to distribute skills
+
+There is no single blessed channel yet; the common options are:
+
+- **Copy/symlink into `~/.claude/skills/`** (user-wide) or `.claude/skills/`
+  (per project, shareable via the project repo) — what this README uses.
+- **Claude Code plugins**: a marketplace repo with a
+  `.claude-plugin/marketplace.json` can bundle skills; users install via
+  `/plugin marketplace add <owner>/<repo>` and `/plugin install …`. Worth it
+  when you distribute several skills/commands together.
+- **The `skills` CLI** (skills.sh): `npx skills add <owner>/<repo>` installs
+  SKILL.md-based skills from GitHub repos across different agents. Since this
+  repo has a root-level `SKILL.md`, it should be discoverable that way too.
 
 ## How it works
 
