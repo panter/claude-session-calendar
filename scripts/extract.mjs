@@ -179,7 +179,7 @@ function extractAssistantEvents(line, t, cwd, events, usageByMsg) {
   }
 }
 
-async function parseTranscript(file) {
+async function parseTranscript(file, seenUuids) {
   const sessionId = path.basename(file, ".jsonl");
   const inputs = [];
   const outputs = [];
@@ -206,6 +206,12 @@ async function parseTranscript(file) {
     }
     if (!cwd && line.cwd) cwd = line.cwd;
     if (line.gitBranch) branch = line.gitBranch;
+    // Forked sessions are transcript copies sharing the message uuids of the
+    // common prefix — count each message only once (owned by the oldest file).
+    if (line.uuid) {
+      if (seenUuids.has(line.uuid)) continue;
+      seenUuids.add(line.uuid);
+    }
     const cls = classifyLine(line);
     if (!cls) continue;
     const t = Date.parse(line.timestamp);
@@ -325,15 +331,33 @@ async function main() {
   const activity = [];
   let files = 0;
 
+  // Oldest transcript first, so shared (forked) history belongs to the original.
+  const transcriptFiles = [];
   for (const folder of folders) {
     const dir = path.join(PROJECTS_DIR, folder.name);
     for (const f of fs.readdirSync(dir)) {
       if (!f.endsWith(".jsonl")) continue;
+      const p = path.join(dir, f);
+      let birth = 0;
+      try {
+        const st = fs.statSync(p);
+        birth = st.birthtimeMs || st.mtimeMs;
+      } catch {
+        continue;
+      }
+      transcriptFiles.push({ p, folderName: folder.name, birth });
+    }
+  }
+  transcriptFiles.sort((a, b) => a.birth - b.birth);
+
+  const seenUuids = new Set();
+  for (const { p, folderName } of transcriptFiles) {
+    {
       files++;
-      const parsed = await parseTranscript(path.join(dir, f)).catch(() => null);
+      const parsed = await parseTranscript(p, seenUuids).catch(() => null);
       if (!parsed) continue;
       const label =
-        projectLabelFromCwd(parsed.cwd) ?? projectLabelFromFolder(folder.name) ?? "unknown";
+        projectLabelFromCwd(parsed.cwd) ?? projectLabelFromFolder(folderName) ?? "unknown";
       if (!projects.has(label)) projects.set(label, { id: label, label, cwds: new Set() });
       if (parsed.cwd) projects.get(label).cwds.add(parsed.cwd);
 
