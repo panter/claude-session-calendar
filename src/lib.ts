@@ -1,6 +1,11 @@
-import type { DataFile, SlotBlock } from "./types";
+import type { DataFile, SessionInfo, SlotBlock } from "./types";
 
 export const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** How a session was started (transcript `entrypoint`), e.g. claude-desktop or cli. */
+export function sessionSource(session: SessionInfo | undefined): string {
+  return session?.source ?? "unknown";
+}
 
 /** Monday 00:00 (local time) of the week containing `t`. */
 export function weekStart(t: number): number {
@@ -106,9 +111,11 @@ export function isoWeekNumber(ws: number): number {
 function dayAndMinutes(t: number, ws: number): { dayIdx: number; min: number } | null {
   if (t < ws || t >= addDays(ws, 7)) return null;
   const d = new Date(t);
-  const dayIdx = Math.floor((t - ws) / DAY_MS); // works because ws is local midnight; DST shifts <2h don't move the day for our data
+  // Calendar-day boundaries, not DAY_MS multiples: DST days are 23 or 25 hours.
+  let dayIdx = 6;
+  while (dayIdx > 0 && t < addDays(ws, dayIdx)) dayIdx--;
   const min = d.getHours() * 60 + d.getMinutes() + d.getSeconds() / 60;
-  return { dayIdx: Math.min(6, Math.max(0, dayIdx)), min };
+  return { dayIdx, min };
 }
 
 interface Laneable {
@@ -165,12 +172,14 @@ export function computeWeekBlocks(
   data: DataFile,
   ws: number,
   visibleProjects: Set<string>,
+  visibleSources: Set<string>,
   slotMinutes: number
 ): WeekBlocks {
   const we = addDays(ws, 7);
   const sessionById = new Map(data.sessions.map((s) => [s.id, s]));
   const projectOf = (sid: string) => sessionById.get(sid)?.project ?? "unknown";
-  const visible = (sid: string) => visibleProjects.has(projectOf(sid));
+  const visible = (sid: string) =>
+    visibleProjects.has(projectOf(sid)) && visibleSources.has(sessionSource(sessionById.get(sid)));
 
   // --- user input slots, rounded down to slotMinutes, merged per session when adjacent
   const slotMap = new Map<string, SlotBlock>();
@@ -230,7 +239,7 @@ export function computeWeekBlocks(
     const end = Math.min(iv.end, we - 1);
     while (cursor <= end) {
       const dm = dayAndMinutes(cursor, ws)!;
-      const dayEndT = ws + (dm.dayIdx + 1) * DAY_MS;
+      const dayEndT = addDays(ws, dm.dayIdx + 1);
       const segEndT = Math.min(end, dayEndT - 1);
       const endDm = dayAndMinutes(segEndT, ws)!;
       const session = sessionById.get(iv.s);
@@ -346,7 +355,11 @@ export interface WeekSummaries {
  * panel: 1 min assumed typing per message, claude = operating minus typing,
  * gaps ≤5 min = you, ≤30 min = idle, longer = dormant (not counted).
  */
-export function computeWeekSummaries(data: DataFile, ws: number): WeekSummaries {
+export function computeWeekSummaries(
+  data: DataFile,
+  ws: number,
+  visibleSources: Set<string>
+): WeekSummaries {
   const we = addDays(ws, 7);
   const bounds = Array.from({ length: 8 }, (_, i) => addDays(ws, i));
   const sessionById = new Map(data.sessions.map((s) => [s.id, s]));
@@ -385,6 +398,7 @@ export function computeWeekSummaries(data: DataFile, ws: number): WeekSummaries 
   for (const [sid, times] of inputsBySession) {
     const session = sessionById.get(sid);
     if (!session || session.end < ws || session.start >= we) continue;
+    if (!visibleSources.has(sessionSource(session))) continue;
     const proj = session.project;
     const typing = mergeIvs(times.map((t) => ({ s: t - TYPING_MS, e: t })));
     const claudeRaw = mergeIvs(actBySession.get(sid) ?? []);

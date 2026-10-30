@@ -9,6 +9,8 @@ export interface SessionInfo {
   project: string;
   title: string;
   branch?: string;
+  /** transcript `entrypoint`: claude-desktop, cli (e.g. Gas City agents), claude-vscode, sdk-cli … */
+  source?: string;
   start: number;
   end: number;
 }

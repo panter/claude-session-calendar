@@ -14,6 +14,7 @@ import {
   fmtWeekLabel,
   isoWeekNumber,
   projectColor,
+  sessionSource,
   splitMinutes,
   splitTotal,
   weekStart,
@@ -21,6 +22,9 @@ import {
 } from "./lib";
 
 const SLOT_OPTIONS = [5, 10, 15, 30, 60];
+// Sessions started by orchestrators (e.g. Gas City agents) run as plain `cli`;
+// only the desktop app's own sessions are shown by default.
+const DEFAULT_SOURCES = ["claude-desktop"];
 
 function useLocalStorage<T>(key: string, initial: T) {
   const [value, setValue] = useState<T>(() => {
@@ -43,6 +47,7 @@ export default function App() {
   const [slotMinutes, setSlotMinutes] = useLocalStorage("cal.slotMinutes", 10);
   const [hiddenProjects, setHiddenProjects] = useLocalStorage<string[]>("cal.hiddenProjects", []);
   const [showActivity, setShowActivity] = useLocalStorage("cal.showActivity", true);
+  const [sources, setSources] = useLocalStorage<string[]>("cal.sources", DEFAULT_SOURCES);
   const [week, setWeek] = useState<number | null>(null);
   const [selected, setSelected] = useState<SlotBlock | null>(null);
 
@@ -61,6 +66,23 @@ export default function App() {
   }, []);
 
   const projectIds = useMemo(() => data?.projects.map((p) => p.id) ?? [], [data]);
+  const visibleSources = useMemo(() => new Set(sources), [sources]);
+
+  const sourceCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const s of data?.sessions ?? []) {
+      const src = sessionSource(s);
+      counts.set(src, (counts.get(src) ?? 0) + 1);
+    }
+    return [...counts.entries()].sort((a, b) => b[1] - a[1]);
+  }, [data]);
+
+  // Projects with at least one session from a shown source (hides agent-only worktrees).
+  const listedProjects = useMemo(() => {
+    const ids = new Set<string>();
+    for (const s of data?.sessions ?? []) if (visibleSources.has(sessionSource(s))) ids.add(s.project);
+    return data?.projects.filter((p) => ids.has(p.id)) ?? [];
+  }, [data, visibleSources]);
 
   const weeks = useMemo(() => {
     if (!data || data.inputs.length === 0) return [];
@@ -78,13 +100,13 @@ export default function App() {
 
   const blocks = useMemo(() => {
     if (!data || week === null) return null;
-    return computeWeekBlocks(data, week, visibleProjects, slotMinutes);
-  }, [data, week, visibleProjects, slotMinutes]);
+    return computeWeekBlocks(data, week, visibleProjects, visibleSources, slotMinutes);
+  }, [data, week, visibleProjects, visibleSources, slotMinutes]);
 
   const summaries = useMemo(() => {
     if (!data || week === null) return null;
-    return computeWeekSummaries(data, week);
-  }, [data, week]);
+    return computeWeekSummaries(data, week, visibleSources);
+  }, [data, week, visibleSources]);
 
   const splitTitle = (label: string, st: SplitMs) => {
     const { totalMin, parts } = splitMinutes(splitTotal(st), [st.claudeMs, st.youMs, st.idleMs], 1);
@@ -212,7 +234,7 @@ export default function App() {
   // Clicking an operating band selects the input chunk that started it.
   const selectFromActivity = (b: SlotBlock) => {
     if (!blocks || week === null) return;
-    const bandStart = week + b.dayIdx * 86400000 + b.startMin * 60000;
+    const bandStart = addDays(week, b.dayIdx) + b.startMin * 60000;
     let best: SlotBlock | null = null;
     let bestT = -Infinity;
     let earliest: SlotBlock | null = null;
@@ -239,6 +261,9 @@ export default function App() {
   const totalMin = (maxHour - minHour) * 60;
   const toPct = (min: number) => ((min - minHour * 60) / totalMin) * 100;
   const today = weekStart(Date.now()) === week ? Math.floor((Date.now() - week) / 86400000) : -1;
+
+  const toggleSource = (src: string) =>
+    setSources((prev) => (prev.includes(src) ? prev.filter((x) => x !== src) : [...prev, src]));
 
   const toggleProject = (id: string) =>
     setHiddenProjects((prev) =>
@@ -286,6 +311,28 @@ export default function App() {
 
         <div className="projects">
           <div className="projects-head">
+            <label>Sources</label>
+            <span>
+              <a onClick={() => setSources(sourceCounts.map(([src]) => src))}>all</a>
+              {" · "}
+              <a onClick={() => setSources(DEFAULT_SOURCES)}>default</a>
+            </span>
+          </div>
+          {sourceCounts.map(([src, n]) => (
+            <label key={src} className="project-row">
+              <input
+                type="checkbox"
+                checked={visibleSources.has(src)}
+                onChange={() => toggleSource(src)}
+              />
+              <span className="pr-name">{src}</span>
+              <span className="pr-time">{n}</span>
+            </label>
+          ))}
+        </div>
+
+        <div className="projects">
+          <div className="projects-head">
             <label>Projects</label>
             <span>
               <a onClick={() => setHiddenProjects([])}>all</a>
@@ -293,7 +340,7 @@ export default function App() {
               <a onClick={() => setHiddenProjects(projectIds)}>none</a>
             </span>
           </div>
-          {data.projects.map((p) => {
+          {listedProjects.map((p) => {
             const st = summaries?.week.get(p.id);
             return (
               <label
@@ -519,7 +566,7 @@ export default function App() {
                           key={b.key}
                           className="block activity"
                           onClick={() => selectFromActivity(b)}
-                          title={`${b.title}\nClaude operating ${fmtTime(week + day * 86400000 + b.startMin * 60000)}–${fmtTime(week + day * 86400000 + b.endMin * 60000)} — click for details`}
+                          title={`${b.title}\nClaude operating ${fmtTime(addDays(week, day) + b.startMin * 60000)}–${fmtTime(addDays(week, day) + b.endMin * 60000)} — click for details`}
                           style={{
                             top: `${toPct(b.startMin)}%`,
                             height: `${toPct(b.endMin) - toPct(b.startMin)}%`,

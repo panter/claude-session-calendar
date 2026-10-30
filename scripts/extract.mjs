@@ -5,7 +5,7 @@
  *
  * Output:
  *   projects: [{ id, label, cwds: [...] }]
- *   sessions: [{ id, project, title, start, end }]
+ *   sessions: [{ id, project, title, source, start, end }]
  *   inputs:   [{ t, s, text }]          — user prompts (t = epoch ms, s = sessionId)
  *   activity: [{ s, start, end }]       — merged intervals where Claude was working
  */
@@ -189,6 +189,7 @@ async function parseTranscript(file, seenUuids) {
   const activityTs = [];
   let cwd = null;
   let branch = null;
+  let entrypoint = null;
   let firstT = Infinity;
   let lastT = -Infinity;
 
@@ -206,6 +207,7 @@ async function parseTranscript(file, seenUuids) {
     }
     if (!cwd && line.cwd) cwd = line.cwd;
     if (line.gitBranch) branch = line.gitBranch;
+    if (!entrypoint && line.entrypoint) entrypoint = line.entrypoint;
     // Forked sessions are transcript copies sharing the message uuids of the
     // common prefix — count each message only once (owned by the oldest file).
     if (line.uuid) {
@@ -276,6 +278,7 @@ async function parseTranscript(file, seenUuids) {
     sessionId,
     cwd,
     branch,
+    entrypoint,
     title,
     inputs,
     outputs,
@@ -366,6 +369,7 @@ async function main() {
         project: label,
         title: desktopTitles.get(parsed.sessionId) ?? parsed.title,
         branch: parsed.branch ?? undefined,
+        source: parsed.entrypoint ?? undefined,
         start: parsed.start,
         end: parsed.end,
       });
